@@ -1,5 +1,6 @@
 import subprocess
 import socket
+import time
 from adafruit_pca9685 import PCA9685
 import busio
 import board
@@ -11,9 +12,8 @@ from donkeycar.parts.actuator import PWMSteering, PWMThrottle, PulseController
 
 
 server_ip = '192.168.1.231'
-UDP_PORT = 5000
-
-TCP_PORT = 6000
+VIDEO_PORT = 5000
+CONTROL_PORT = 6000
 
 cfg = dk.load_config()
 
@@ -45,44 +45,68 @@ throttle = PWMThrottle(
 )
 
 
-def start_tcp_server():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(('0.0.0.0',TCP_PORT))
-    sock.listen(1)
-
-    print(f"TCP Server listening on port {TCP_PORT}...")
-    conn, addr = sock.accept()
-    print(f"Connected by {addr}")
-
+def start_control_client():
+    """Connect to the Orin's TCP control server and receive steering/throttle commands."""
     while True:
+        sock = None
         try:
-            data = conn.recv(1024).decode("utf-8").strip()
-            if not data:
-                continue
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            print(f"Connecting to control server at {server_ip}:{CONTROL_PORT}...")
+            sock.connect((server_ip, CONTROL_PORT))
+            print("Connected to control server.")
 
-            try:
-                steering_value, throttle_value = map(float, data.split(","))
-            except ValueError:
-                print(f"Invalid data received: {data}")
-                continue
+            buffer = ""
+            while True:
+                data = sock.recv(1024)
+                if not data:
+                    print("Control server closed connection.")
+                    break
 
-            steering.run(steering_value)
-            throttle.run(throttle_value)
+                buffer += data.decode("utf-8")
 
-        except(sock.error, KeyboardInterrupt):
-            print("Connection lost or interrupted. Shutting down...")
+                # Process all complete newline-delimited messages
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    try:
+                        steering_value, throttle_value = map(float, line.split(","))
+                    except ValueError:
+                        print(f"Invalid data received: {line}")
+                        continue
+
+                    steering.run(steering_value)
+                    throttle.run(throttle_value)
+
+        except (ConnectionRefusedError, ConnectionResetError, OSError) as e:
+            print(f"Control connection error: {e}. Retrying in 2 seconds...")
+
+        except KeyboardInterrupt:
+            print("Interrupted. Shutting down...")
             break
 
-    conn.close()
-    sock.close()
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+
+        time.sleep(2)  # Wait before reconnection attempt
 
 #original width 640 height 480
 def start_video_stream():
-    cmd=f"libcamera-vid -t 0 --width 160 --height 120 --inline --hflip --vflip --output udp://{server_ip}:{server_port}"
-    
-    print("Starting libcamera-vid stream...")
+    cmd = (
+        f"libcamera-vid -t 0 --width 160 --height 120 --inline --hflip --vflip "
+        f"--output tcp://{server_ip}:{VIDEO_PORT}"
+    )
+    print(f"Starting libcamera-vid TCP stream to {server_ip}:{VIDEO_PORT}...")
     subprocess.Popen(cmd, shell=True)
-    print("Video stream started")
+    print("Video stream started.")
 
 threading.Thread(target=start_video_stream, daemon=True).start()
-start_tcp_server()
+start_control_client()
+
