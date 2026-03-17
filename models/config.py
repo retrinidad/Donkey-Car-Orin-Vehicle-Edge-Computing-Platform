@@ -367,8 +367,10 @@ DEFAULT_AI_FRAMEWORK = 'tensorflow'
 # python manage.py train and drive commands.
 # tensorflow models: (linear|categorical|tflite_linear|tensorrt_linear)
 # pytorch models: (resnet18)
-DEFAULT_MODEL_TYPE = 'linear'
-BATCH_SIZE = 128                #how many records to use when doing one pass of gradient decent. Use a smaller number if your gpu is running out of memory.
+DEFAULT_MODEL_TYPE = 'linear' #Change to categorical for stability and steering decisions
+                                # 
+BATCH_SIZE = 64               # Smaller batch to make the model learn more iteratively
+                                # how many records to use when doing one pass of gradient decent. Use a smaller number if your gpu is running out of memory.
 TRAIN_TEST_SPLIT = 0.8          #what percent of records to use for training. the remaining used for validation.
 MAX_EPOCHS = 100                #how many times to visit all records of your data
 SHOW_PLOT = True                #would you like to see a pop up display of final loss?
@@ -482,17 +484,20 @@ PRUNE_EVAL_PERCENT_OF_DATASET = .05  # percent of dataset used to perform evalua
 #           return self.blur.run(image)
 #   ```
 #
-AUGMENTATIONS = ["BRIGHTNESS"]         # changes to image only applied in training to create
+AUGMENTATIONS = ["BRIGHTNESS", 'BLUR']         # changes to image only applied in training to create
                            # more variety in the data.
-TRANSFORMATIONS = []       # changes applied _before_ training augmentations,
+                           # Added a small blur
+TRANSFORMATIONS = ['CROP']       # changes applied _before_ training augmentations,
                            # such that augmentations are applied to the transformed image,
+                           # Added Crop to the transformation so the model will only focus on the road
+
 POST_TRANSFORMATIONS = []  # transformations applied _after_ training augmentations,
                            # such that changes are applied to the augmented image
 
 # Settings for brightness and blur, use 'MULTIPLY' and/or 'BLUR' in
 # AUGMENTATIONS
 AUG_BRIGHTNESS_RANGE = 0.5  # this is interpreted as [-0.5, 0.5]
-AUG_BLUR_RANGE = (0, 3)
+AUG_BLUR_RANGE = (0, 2) #Changed from 3 to 2, smaller blur for safety
 
 # "CROP" Transformation
 # Apply mask to borders of the image
@@ -730,7 +735,7 @@ AI_LAUNCH_KEEP_ENABLED = False      # when False ( default) you will need to hit
 
 #Scale the output of the throttle of the ai pilot for all model types.
 AI_THROTTLE_MULT = .95              # this multiplier will scale every throttle value for all output from NN models
-
+# the throttle value might be too big, 0.3-0.5 should be tested first
 #Path following
 PATH_FILENAME = "donkey_path.pkl"   # the path will be saved to this filename
 PATH_SCALE = 5.0                    # the path display will be scaled by this factor in the web page
